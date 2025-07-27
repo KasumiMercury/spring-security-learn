@@ -1,6 +1,5 @@
 package net.mercuryksm.spring_security_learn.config
 
-import com.nimbusds.jose.jwk.JWK
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet
@@ -11,11 +10,8 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.io.Resource
 import org.springframework.core.io.ResourceLoader
-import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jwt.JwtEncoder
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder
-import java.io.FileInputStream
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.interfaces.RSAPrivateKey
@@ -27,16 +23,16 @@ import java.util.*
 @Configuration
 class JwtConfig(private val resourceLoader: ResourceLoader) {
 
-    @Value("\${application.auth.jwt.private-key:#{null}}")
+    @Value("\${spring.security.oauth2.resourceserver.jwt.private-key:#{null}}")
     private val privateKeyString: String? = null
 
-    @Value("\${application.auth.jwt.public-key:#{null}}")
+    @Value("\${spring.security.oauth2.resourceserver.jwt.public-key:#{null}}")
     private val publicKeyString: String? = null
 
-    @Value("\${application.auth.jwt.private-key-path:#{null}}")
+    @Value("\${spring.security.oauth2.resourceserver.jwt.private-key-path:#{null}}")
     private val privateKeyPath: String? = null
 
-    @Value("\${application.auth.jwt.public-key-path:#{null}}")
+    @Value("\${spring.security.oauth2.resourceserver.jwt.public-key-path:#{null}}")
     private val publicKeyPath: String? = null
 
     private var cachedRsaKey: RSAKey? = null
@@ -46,11 +42,6 @@ class JwtConfig(private val resourceLoader: ResourceLoader) {
         val jwk = getRsaKey()
         val jwks: JWKSource<SecurityContext> = ImmutableJWKSet(JWKSet(jwk))
         return NimbusJwtEncoder(jwks)
-    }
-
-    @Bean
-    fun jwtDecoder(): JwtDecoder {
-        return NimbusJwtDecoder.withPublicKey(getRsaKey().toRSAPublicKey()).build()
     }
 
     private fun getRsaKey(): RSAKey {
