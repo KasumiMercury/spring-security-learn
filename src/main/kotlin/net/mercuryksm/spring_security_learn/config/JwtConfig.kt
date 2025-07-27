@@ -5,7 +5,7 @@ import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet
 import com.nimbusds.jose.jwk.source.JWKSource
 import com.nimbusds.jose.proc.SecurityContext
-import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.io.Resource
@@ -21,78 +21,65 @@ import java.security.spec.X509EncodedKeySpec
 import java.util.*
 
 @Configuration
-class JwtConfig(private val resourceLoader: ResourceLoader) {
+@EnableConfigurationProperties(JwtProperties::class)
+class JwtConfig(
+    private val jwtProperties: JwtProperties,
+    private val resourceLoader: ResourceLoader
+) {
 
-    @Value("\${spring.security.oauth2.resourceserver.jwt.private-key:#{null}}")
-    private val privateKeyString: String? = null
-
-    @Value("\${spring.security.oauth2.resourceserver.jwt.public-key:#{null}}")
-    private val publicKeyString: String? = null
-
-    @Value("\${spring.security.oauth2.resourceserver.jwt.private-key-path:#{null}}")
-    private val privateKeyPath: String? = null
-
-    @Value("\${spring.security.oauth2.resourceserver.jwt.public-key-path:#{null}}")
-    private val publicKeyPath: String? = null
-
-    private var cachedRsaKey: RSAKey? = null
+    private var cachedJwtKeys: JwtKeys? = null
 
     @Bean
     fun jwtEncoder(): JwtEncoder {
-        val jwk = getRsaKey()
-        val jwks: JWKSource<SecurityContext> = ImmutableJWKSet(JWKSet(jwk))
+        val jwtKeys = getJwtKeys()
+        val rsaKey = RSAKey.Builder(jwtKeys.publicKey)
+            .privateKey(jwtKeys.privateKey)
+            .keyID(UUID.randomUUID().toString())
+            .build()
+        
+        val jwks: JWKSource<SecurityContext> = ImmutableJWKSet(JWKSet(rsaKey))
         return NimbusJwtEncoder(jwks)
     }
 
-    private fun getRsaKey(): RSAKey {
-        if (cachedRsaKey != null) {
-            return cachedRsaKey!!
+    private fun getJwtKeys(): JwtKeys {
+        if (cachedJwtKeys != null) {
+            return cachedJwtKeys!!
         }
 
-        cachedRsaKey = try {
+        cachedJwtKeys = try {
             when {
-                !privateKeyString.isNullOrBlank() && !publicKeyString.isNullOrBlank() -> {
-                    loadRsaKeyFromStrings(privateKeyString, publicKeyString)
-                }
-                !privateKeyPath.isNullOrBlank() && !publicKeyPath.isNullOrBlank() -> {
-                    loadRsaKeyFromFiles(privateKeyPath, publicKeyPath)
+                !jwtProperties.privateKey.isNullOrBlank() && !jwtProperties.publicKey.isNullOrBlank() -> {
+                    loadKeys(jwtProperties.privateKey, jwtProperties.publicKey)
                 }
                 else -> {
-                    generateRsaKey()
+                    generateKeys()
                 }
             }
         } catch (e: Exception) {
             println("Warning: Failed to load configured JWT keys, generating new ones: ${e.message}")
-            generateRsaKey()
+            generateKeys()
         }
 
-        return cachedRsaKey!!
+        return cachedJwtKeys!!
     }
 
-    private fun loadRsaKeyFromStrings(privateKeyStr: String, publicKeyStr: String): RSAKey {
-        val privateKey = parsePrivateKey(privateKeyStr)
-        val publicKey = parsePublicKey(publicKeyStr)
-        
-        return RSAKey.Builder(publicKey)
-            .privateKey(privateKey)
-            .keyID(UUID.randomUUID().toString())
-            .build()
+    private fun loadKeys(privateKeyValue: String, publicKeyValue: String): JwtKeys {
+        val privateKey = loadKey(privateKeyValue, ::parsePrivateKey)
+        val publicKey = loadKey(publicKeyValue, ::parsePublicKey)
+        return JwtKeys(publicKey, privateKey)
     }
 
-    private fun loadRsaKeyFromFiles(privateKeyPath: String, publicKeyPath: String): RSAKey {
-        val privateKeyResource: Resource = resourceLoader.getResource(privateKeyPath)
-        val publicKeyResource: Resource = resourceLoader.getResource(publicKeyPath)
-
-        val privateKeyContent = privateKeyResource.inputStream.use { it.readBytes() }
-        val publicKeyContent = publicKeyResource.inputStream.use { it.readBytes() }
-
-        val privateKey = parsePrivateKey(String(privateKeyContent))
-        val publicKey = parsePublicKey(String(publicKeyContent))
-
-        return RSAKey.Builder(publicKey)
-            .privateKey(privateKey)
-            .keyID(UUID.randomUUID().toString())
-            .build()
+    private fun <T> loadKey(keyValue: String, keyParser: (String) -> T): T {
+        return if (keyValue.startsWith("file:")) {
+            // ファイルパスから読み込み
+            val filePath = keyValue.removePrefix("file:")
+            val resource: Resource = resourceLoader.getResource(filePath)
+            val keyContent = resource.inputStream.use { String(it.readBytes()) }
+            keyParser(keyContent)
+        } else {
+            // 直接キー文字列として解析
+            keyParser(keyValue)
+        }
     }
 
     private fun parsePrivateKey(keyContent: String): RSAPrivateKey {
@@ -127,14 +114,14 @@ class JwtConfig(private val resourceLoader: ResourceLoader) {
         return keyFactory.generatePublic(keySpec) as RSAPublicKey
     }
 
-    private fun generateRsaKey(): RSAKey {
+    private fun generateKeys(): JwtKeys {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply {
             initialize(2048)
         }.generateKeyPair()
 
-        return RSAKey.Builder(keyPair.public as RSAPublicKey)
-            .privateKey(keyPair.private as RSAPrivateKey)
-            .keyID(UUID.randomUUID().toString())
-            .build()
+        return JwtKeys(
+            publicKey = keyPair.public as RSAPublicKey,
+            privateKey = keyPair.private as RSAPrivateKey
+        )
     }
 }
