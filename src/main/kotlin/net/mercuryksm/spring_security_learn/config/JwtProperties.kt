@@ -8,16 +8,13 @@ import java.security.interfaces.RSAPublicKey
 @ConfigurationProperties("application.auth.jwt", ignoreUnknownFields = true, ignoreInvalidFields = true)
 data class JwtProperties @ConstructorBinding constructor(
     /**
-     * 公開鍵。直接キー文字列を指定するか、"file:path/to/public.pem"形式でファイルパスを指定可能
+     * 公開鍵。PEM文字列、file:パス、classpath:パスをサポート
+     * Spring Bootが自動的にRSAPublicKeyに変換
      */
-    val publicKey: String? = null,
+    val publicKey: RSAPublicKey? = null,
     /**
-     * 秘密鍵。直接キー文字列を指定するか、"file:path/to/private.pem"形式でファイルパスを指定可能  
+     * 秘密鍵。PEM文字列、file:パス、classpath:パスをサポート
+     * Spring Bootが自動的にRSAPrivateKeyに変換
      */
-    val privateKey: String? = null
-)
-
-data class JwtKeys(
-    val publicKey: RSAPublicKey,
-    val privateKey: RSAPrivateKey
+    val privateKey: RSAPrivateKey? = null
 )
